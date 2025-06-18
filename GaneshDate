@@ -1,0 +1,161 @@
+// ==UserScript==
+// @name         Stealth Auto Fill Korean Embassy Form (Fixed Date Click)
+// @namespace    http://tampermonkey.net/
+// @version      4.3
+// @description  Autofills DOB, Passport Number, and Expiry (Fixed for 30th day issue)
+// @match        https://koreanembassynepal.org/*
+// @grant        none
+// ==/UserScript==
+
+(function () {
+    'use strict';
+
+    // === CONFIGURABLE VALUES ===
+    const DOB_DATE = "2004-10-28";
+    const PASSPORT_NUMBER = "PA4064770";
+    const EXP_DATE = "2035-04-06";
+    // ===========================
+
+    function delay(fn, min = 20, max = 60) {
+        setTimeout(fn, Math.floor(Math.random() * (max - min + 1)) + min);
+    }
+
+    function clickButtonByLabel(label) {
+        const btn = Array.from(document.querySelectorAll('button[aria-haspopup="dialog"]'))
+            .find(b => b.textContent.includes(label));
+        if (btn) {
+            btn.click();
+            return true;
+        }
+        return false;
+    }
+
+    function selectDropdownValue(selector, value) {
+        const el = document.querySelector(selector);
+        if (el) {
+            el.value = value;
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+            return true;
+        }
+        return false;
+    }
+
+    function clickDayButtonByDate(dateStr) {
+        const date = new Date(dateStr);
+        const day = date.getDate();
+        const dayButtons = Array.from(document.querySelectorAll('button'))
+            .filter(b => b.textContent === day.toString() && !b.disabled);
+
+        for (let btn of dayButtons) {
+            const label = btn.getAttribute('aria-label');
+            if (label && label.includes(date.getFullYear().toString())) {
+                btn.click();
+                return true;
+            }
+        }
+
+        console.warn(`❌ Failed to find valid button for day ${day} in year ${date.getFullYear()}`);
+        return false;
+    }
+
+    function typeInput(selector, value) {
+        const input = document.querySelector(selector);
+        if (input) {
+            input.focus();
+            input.value = "";
+            let i = 0;
+            function typeChar() {
+                if (i < value.length) {
+                    input.value += value[i];
+                    input.dispatchEvent(new InputEvent("input", {
+                        bubbles: true,
+                        data: value[i],
+                        inputType: "insertText"
+                    }));
+                    i++;
+                    setTimeout(typeChar, 30);
+                } else {
+                    input.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+            }
+            typeChar();
+            return true;
+        }
+        return false;
+    }
+
+    function runSteps() {
+        const dobDate = new Date(DOB_DATE);
+        const expDate = new Date(EXP_DATE);
+        let step = 0;
+
+        function proceed() {
+            switch (step) {
+                case 0:
+                    if (clickButtonByLabel("Date of Birth")) delay(proceed);
+                    break;
+                case 1:
+                    if (selectDropdownValue("select.rdp-years_dropdown", dobDate.getFullYear().toString())) delay(proceed);
+                    else return delay(proceed);
+                    break;
+                case 2:
+                    if (selectDropdownValue("select.rdp-months_dropdown", dobDate.getMonth().toString())) delay(proceed);
+                    else return delay(proceed);
+                    break;
+                case 3:
+                    if (clickDayButtonByDate(DOB_DATE)) delay(proceed);
+                    else return delay(proceed);
+                    break;
+                case 4:
+                    if (typeInput('input[placeholder="Passport Number"]', PASSPORT_NUMBER)) {
+                        setTimeout(proceed, PASSPORT_NUMBER.length * 60 + 100);
+                    } else return delay(proceed);
+                    break;
+                case 5:
+                    if (clickButtonByLabel("Passport Expiry")) delay(proceed);
+                    else return delay(proceed);
+                    break;
+                case 6:
+                    if (selectDropdownValue("select.rdp-years_dropdown", expDate.getFullYear().toString())) delay(proceed);
+                    else return delay(proceed);
+                    break;
+                case 7:
+                    if (selectDropdownValue("select.rdp-months_dropdown", expDate.getMonth().toString())) delay(proceed);
+                    else return delay(proceed);
+                    break;
+                case 8:
+                    if (clickDayButtonByDate(EXP_DATE)) delay(proceed);
+                    else return delay(proceed);
+                    break;
+                case 9:
+                    console.log("✅ Autofill done. You can now manually verify and submit.");
+                    break;
+            }
+            step++;
+        }
+
+        delay(proceed, 50, 100);
+    }
+
+    function waitForFormAndRun() {
+        const observer = new MutationObserver(() => {
+            const dobBtn = [...document.querySelectorAll('button[aria-haspopup="dialog"]')].find(b => b.textContent.includes("Date of Birth"));
+            const passportInput = document.querySelector('input[placeholder="Passport Number"]');
+
+            if (dobBtn && passportInput && !document.body.dataset.autofillActive) {
+                document.body.dataset.autofillActive = "true";
+                delay(() => {
+                    runSteps();
+                    setTimeout(() => {
+                        document.body.dataset.autofillActive = "";
+                    }, 10000);
+                }, 100, 200);
+            }
+        });
+
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    waitForFormAndRun();
+})();
+
